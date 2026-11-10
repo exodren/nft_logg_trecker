@@ -62,9 +62,9 @@ copy .env.example .env          # cp .env.example .env
 1. Токен: мини-апп [@seetgbot](https://t.me/seetgbot) → Полезное → API → создать приложение (нужен Telegram Premium; название и ссылка — реальные). Записать в `KARTOSHKA_API_TOKEN`.
 2. **Подтвердить схему ответа** (один раз, в пределах бесплатной квоты):
    ```bash
-   python -m scripts.capture_kartoshka_fixtures <slug-с-username> <slug-без-username> <slug-скрытого> Nope-999999999
+   python -m scripts.capture_kartoshka_fixtures --allow-paid <slug-с-username> <slug-без-username> <slug-скрытого> Nope-999999999
    ```
-   Скрипт откажется работать, если бесплатных запросов меньше, чем slug'ов, и остановится на первом платном ответе. Ответы попадут в `tests/fixtures/kartoshka/`. По ним пишется проверенный маппер полей владельца (`app/providers/kartoshka.py`, `OwnerMapper`). **До этого провайдер не вызывается** (`ready=False`): поля ответа не угадываются.
+   Без `--allow-paid` скрипт работает только в бесплатной квоте и останавливается на первом платном ответе. Ответы попадут в `tests/fixtures/kartoshka/`. По ним пишется проверенный маппер полей владельца (`app/providers/kartoshka.py`, `OwnerMapper`). **До этого провайдер не вызывается** (`ready=False`): поля ответа не угадываются.
 3. Пополнение баланса — в мини-аппе. Платные запросы начинаются только при `DAILY_API_BUDGET_TON > 0`.
 
 Правила сервиса: https://kartoshka.free/rules.js. Методы `/who` и `/owners/search` не используются. Подробности: `research/data/reports/kartoshka_api_integration.md`.
@@ -137,5 +137,6 @@ app/            config, main (точка входа), supervisor
 tests/          pytest; fixtures/
 scripts/        capture_kartoshka_fixtures.py
 research/       исследования MTProto (не изменялись)
-docs/           database.md
+docs/           database.md, implementation.md (что реализовано), manual_test_plan.md (ручные тесты),
+                session_2026-11-10.md (журнал сессии)
 ```
