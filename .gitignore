@@ -1,0 +1,49 @@
+# --- secrets: never commit ---
+.env
+.env.*
+!.env.example
+*.session
+*.session-journal
+**/sessions/
+
+# --- Python caches and build junk ---
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+.venv/
+venv/
+
+# --- runtime output ---
+logs/
+*.log
+/nft-mtproto-test/data/
+backups/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.tmp
+
+# --- research raw data (dumps with personal data); markdown reports are kept ---
+nft-mtproto-test/research/data/*
+!nft-mtproto-test/research/data/reports/
+nft-mtproto-test/research/data/reports/*
+!nft-mtproto-test/research/data/reports/*.md
+
+# --- real Telegram data kept local only: test fixtures and on-chain dumps ---
+nft-mtproto-test/tests/fixtures/
+nft-mtproto-test/chillflame.json
+nft-mtproto-test/chillflame_history.csv
+
+# --- editors, OS, tools ---
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+graphify-out/

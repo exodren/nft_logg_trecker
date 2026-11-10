@@ -1,0 +1,9 @@
+Telethon==1.45.0
+aiogram>=3.13,<4
+aiohttp>=3.9
+SQLAlchemy[asyncio]>=2.0,<3
+alembic>=1.13,<2
+aiosqlite>=0.20
+python-dotenv>=1.0
+pytest>=8.0
+pytest-asyncio>=0.24

@@ -1,0 +1,13 @@
+# Main rules live in ../.gitignore. Kept here so this folder is safe on its own as well.
+.env
+*.session
+*.session-journal
+sessions/
+__pycache__/
+.venv/
+.pytest_cache/
+research/.env
+logs/
+/data/
+backups/
+*.db
