@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from pathlib import Path
+from typing import AsyncIterator
 
 from sqlalchemy import event
 from sqlalchemy.engine import make_url
@@ -27,13 +30,44 @@ def create_engine(database_url: str) -> AsyncEngine:
             cur = dbapi_conn.cursor()
             cur.execute("PRAGMA foreign_keys=ON")
             cur.execute("PRAGMA journal_mode=WAL")  # bot reads while the scanner writes
-            cur.execute("PRAGMA busy_timeout=5000")
+            cur.execute("PRAGMA synchronous=NORMAL")  # safe with WAL (no corruption), shorter commits
+            cur.execute("PRAGMA busy_timeout=30000")  # other processes (scripts, backup) wait instead of failing
             cur.close()
     return engine
 
 
-def session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
-    return async_sessionmaker(engine, expire_on_commit=False)
+_writing: ContextVar[bool] = ContextVar("db_writing", default=False)
+
+
+class Sessions:
+    """async_sessionmaker whose begin() takes one process-wide write lock.
+
+    SQLite allows one writer; its busy handler polls and is unfair, so under load a writer could time out with
+    'database is locked'. Here in-process writers queue FIFO on an asyncio.Lock; readers (sessions()) use WAL
+    snapshots and never wait. A begin() nested inside another begin() in the same task would deadlock, so it raises.
+    """
+
+    def __init__(self, maker: async_sessionmaker[AsyncSession]) -> None:
+        self._maker = maker
+        self._write = asyncio.Lock()
+
+    def __call__(self, **kw: object) -> AsyncSession:
+        return self._maker(**kw)
+
+    @asynccontextmanager
+    async def begin(self) -> AsyncIterator[AsyncSession]:
+        if _writing.get():
+            raise RuntimeError("nested write transaction: sessions.begin() inside sessions.begin()")
+        token = _writing.set(True)
+        try:
+            async with self._write, self._maker.begin() as s:
+                yield s
+        finally:
+            _writing.reset(token)
+
+
+def session_factory(engine: AsyncEngine) -> Sessions:
+    return Sessions(async_sessionmaker(engine, expire_on_commit=False))
 
 
 def _upgrade(database_url: str) -> None:

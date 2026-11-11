@@ -109,7 +109,8 @@ class Pipeline:
             listing = await s.get(Listing, task.listing_id)
             gift = await s.get(Gift, task.gift_id)
             listing.owner_lookup_status = "DEFERRED" if res.deferred else "DONE"
-            if task.payload.get("notify"):
+            # in group mode backfill results go to the group too (no DMs there), otherwise only to the bot views
+            if task.payload.get("notify") or (self._owner_log and task.payload.get("backfill")):
                 await self._notify_new_listing(s, listing, gift, res.data, owner_known=not res.deferred)
         if res.deferred:
             return "defer", res.retry_at or self._clock() + UNAVAILABLE_RETRY

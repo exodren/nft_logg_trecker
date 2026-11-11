@@ -141,15 +141,19 @@ async def settings_cmd(message: Message, deps, db_user_id: int) -> None:
 
 
 async def filter_cmd(message: Message, command: CommandObject, deps, db_user_id: int) -> None:
-    async with deps.sessions.begin() as s:
+    error = None
+    async with deps.sessions.begin() as s:  # no network calls while holding the write lock
         f = await ensure_filter(s, db_user_id)
         try:
             apply_filter_command(f, command.args or "")
         except FilterInputError as e:
-            await message.answer(str(e))
-            return
-        await s.flush()
-        fid, enabled, text = f.id, f.notifications_enabled, fmt.filter_text(f)
+            error = str(e)
+        else:
+            await s.flush()
+            fid, enabled, text = f.id, f.notifications_enabled, fmt.filter_text(f)
+    if error:
+        await message.answer(error)
+        return
     extra = await _after_filter_change(deps, fid, enabled)
     await message.answer("Фильтр сохранён." + extra + "\n\n" + text, reply_markup=kb.settings_kb())
 

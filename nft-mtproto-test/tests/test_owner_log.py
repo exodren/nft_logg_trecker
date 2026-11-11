@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from aiogram.exceptions import TelegramForbiddenError
 from sqlalchemy import select
 
-from app.database.models import Notification, OwnerLogPost
+from app.database.models import Notification, OwnerLogPost, UserFilter
 from app.providers.base import OwnerStatus
 from app.providers.mock import MockProvider
 from app.services import owner_log
@@ -65,3 +65,21 @@ async def test_found_owner_posted_without_owner_then_first_claim_wins(sessions, 
     assert bot.sent[-1][0] == 42 and "@tgmefchik" in bot.sent[-1][1]
     assert bot.edited == [(GROUP, 1, owner_log.CLAIMED_TEXT)]
     assert await claim(sessions, bot, GROUP, post.id, 43) == "Лог уже занят"
+
+
+async def test_backfill_in_group_mode_posts_to_group(sessions):
+    clock = Clock()
+    queue = TaskQueue(sessions, clock=clock)
+    mock = MockProvider({SLUG: owner(OwnerStatus.FOUND, 8556771897, "tgmefchik")})
+    pipe = Pipeline(sessions, queue, OwnerResolver(sessions, mock, None, cache_ttl_s=3600, clock=clock),
+                    clock=clock, owner_log=True)
+    uid = await add_user(sessions, 1, collections=["IonGem"], price_max=Decimal(8755), notifications_enabled=False)
+    await ListingScanner(FakeTelegram(page()), sessions, 60, on_events=pipe.on_events, clock=clock).run_cycle()
+    async with sessions.begin() as s:
+        f = (await s.execute(select(UserFilter).where(UserFilter.user_id == uid))).scalar_one()
+        f.notifications_enabled = True
+    assert await pipe.backfill(f.id) > 0
+    await drain(pipe)
+    async with sessions() as s:
+        assert (await s.execute(select(OwnerLogPost))).scalars().all()
+        assert (await s.execute(select(Notification))).first() is None
