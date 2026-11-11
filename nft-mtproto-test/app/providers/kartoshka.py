@@ -2,8 +2,8 @@
 
 Only documented behaviour is used: GET /v1/gift/{ref}, Bearer token, {ok, result} envelope, codes
 400/401/402/404/429/500, Retry-After, X-Free-Remaining / X-Request-Cost / X-Balance, GET /v1/pricing.
-The JSON schema of /v1/gift is not published. Owner fields are read by an OwnerMapper; until a mapper is
-verified against real responses (task K4.1b) the provider reports ready=False and is not called.
+The JSON schema of /v1/gift is not published; GiftOwnerMapper reads owner fields as seen in real responses
+(K4.1b). A mapper with verified=False makes the provider report ready=False.
 /who and /owners/search are deliberately absent (§2.2).
 """
 from __future__ import annotations
@@ -57,6 +57,29 @@ class UnverifiedSchemaMapper:
         return OwnerFields(OwnerStatus.UNAVAILABLE, reason="schema_unverified")
 
 
+class GiftOwnerMapper:
+    """result.gift.owner, verified on real responses (tests/fixtures/kartoshka, 2026-11-12):
+    public: {seeType:"public", telegramType, telegramId:"<str>", username, usernames?, name}
+    hidden: {seeType:"hidden", seeId, name}  (no id, no username)"""
+    verified = True
+
+    def __call__(self, result: dict[str, Any]) -> OwnerFields:
+        gift = result.get("gift")
+        owner = gift.get("owner") if isinstance(gift, dict) else None
+        if not isinstance(owner, dict):
+            return OwnerFields(OwnerStatus.NOT_FOUND, reason="no_owner")
+        name = owner.get("name") or None
+        kind = owner.get("seeType")
+        if kind == "hidden":
+            return OwnerFields(OwnerStatus.HIDDEN, display_name=name, is_hidden=True)
+        if kind != "public":
+            return OwnerFields(OwnerStatus.ERROR, reason=f"unknown_seeType:{kind}")
+        tid = str(owner.get("telegramId") or "")
+        # FOUND without username becomes NO_USERNAME in apply_owner_rules
+        return OwnerFields(OwnerStatus.FOUND, telegram_id=int(tid) if tid.isdigit() else None,
+                           username=owner.get("username") or None, display_name=name)
+
+
 @dataclass(frozen=True)
 class Pricing:
     price_per_request: Decimal
@@ -93,7 +116,7 @@ class KartoshkaApiProvider:
             raise ValueError("KARTOSHKA_API_TOKEN is empty")
         self._token = token
         self._base = base_url.rstrip("/")
-        self._mapper = mapper or UnverifiedSchemaMapper()
+        self._mapper = mapper or GiftOwnerMapper()
         self._session = session
         self._own_session = session is None
         self._sem = asyncio.Semaphore(max_concurrency)

@@ -47,3 +47,17 @@ nft-mtproto-test/chillflame_history.csv
 Thumbs.db
 desktop.ini
 graphify-out/
+
+# --- prompts and task notes: kept local only ---
+/актуальный промпт.md
+/промпт.md
+/текст.txt
+*промпт*.md
+
+# --- more junk ---
+.claude/
+*.bak
+*.orig
+*.swp
+*~
+nul

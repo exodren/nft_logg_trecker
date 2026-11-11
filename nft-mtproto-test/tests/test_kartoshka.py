@@ -308,3 +308,24 @@ async def test_resolver_probes_quota_before_first_request(server, sessions):
     assert (await u.report()).free_remaining == 99
     async with sessions() as s:
         assert (await s.execute(select(OwnerLookupCache))).scalar_one().status == "FOUND"
+
+
+def test_gift_owner_mapper_on_real_response_shapes():
+    from app.providers.base import apply_owner_rules
+    from app.providers.kartoshka import GiftOwnerMapper
+    m = GiftOwnerMapper()
+    pub = m({"gift": {"owner": {"seeType": "public", "telegramType": "user", "telegramId": "123",
+                                "username": "alice", "usernames": ["alice", "a2"], "name": "Alice"}}})
+    assert (pub.status, pub.telegram_id, pub.username, pub.display_name) == (OwnerStatus.FOUND, 123, "alice", "Alice")
+    hidden = m({"gift": {"owner": {"seeType": "hidden", "seeId": "x", "name": "Bob"}}})
+    assert (hidden.status, hidden.is_hidden, hidden.telegram_id, hidden.username) == (OwnerStatus.HIDDEN, True, None, None)
+    assert m({"gift": {}}).status is OwnerStatus.NOT_FOUND
+    assert m({}).status is OwnerStatus.NOT_FOUND
+    assert m({"gift": {"owner": {"seeType": "weird"}}}).status is OwnerStatus.ERROR
+    nouser = m({"gift": {"owner": {"seeType": "public", "telegramId": "5", "name": "N"}}})
+    data = OwnerData(status=nouser.status, provider="kartoshka", fetched_at=NOW, telegram_id=nouser.telegram_id)
+    assert apply_owner_rules(data).status is OwnerStatus.NO_USERNAME
+
+
+def test_default_provider_is_ready():
+    assert KartoshkaApiProvider(TOKEN).ready

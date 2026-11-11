@@ -44,7 +44,7 @@ def _task(row: ProcessingTask) -> Task:
 
 async def enqueue(s: AsyncSession, task_type: str, dedup_key: str, *, priority: int = HIGH,
                   listing_id: int | None = None, gift_id: int | None = None,
-                  payload: dict[str, Any] | None = None) -> ProcessingTask:
+                  payload: dict[str, Any] | None = None, now: datetime | None = None) -> ProcessingTask:
     """Inside the caller's transaction. An active duplicate is merged: higher priority, OR-ed flags."""
     existing = (await s.execute(select(ProcessingTask).where(
         ProcessingTask.dedup_key == dedup_key, ProcessingTask.status.in_(ACTIVE)))).scalar_one_or_none()
@@ -58,7 +58,7 @@ async def enqueue(s: AsyncSession, task_type: str, dedup_key: str, *, priority: 
             existing.listing_id = listing_id
         return existing
     row = ProcessingTask(task_type=task_type, dedup_key=dedup_key, priority=priority, status="pending",
-                         listing_id=listing_id, gift_id=gift_id, payload=payload or {}, next_attempt_at=utcnow())
+                         listing_id=listing_id, gift_id=gift_id, payload=payload or {}, next_attempt_at=now or utcnow())
     s.add(row)
     await s.flush()
     return row

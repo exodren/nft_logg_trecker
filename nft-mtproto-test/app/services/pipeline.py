@@ -14,9 +14,9 @@ from typing import Callable
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.database.models import Gift, Listing, Notification, Owner, User, UserFilter
+from app.database.models import Gift, Listing, Notification, Owner, OwnerLogPost, User, UserFilter
 from app.database.types import utcnow
-from app.providers.base import OwnerData
+from app.providers.base import OwnerData, OwnerStatus
 from app.services import cache
 from app.services.enrichment import OwnerResolver
 from app.services.filters import ListingView, has_owner_criteria, stage1, stage2
@@ -58,8 +58,9 @@ async def add_notification(s: AsyncSession, user_id: int, listing_id: int, event
 
 class Pipeline:
     def __init__(self, sessions: async_sessionmaker[AsyncSession], queue: TaskQueue, resolver: OwnerResolver,
-                 clock: Callable[[], datetime] = utcnow) -> None:
+                 clock: Callable[[], datetime] = utcnow, owner_log: bool = False) -> None:
         self._sessions = sessions
+        self._owner_log = owner_log  # also post found owners of matched listings to OWNER_LOG_GROUP_ID
         self.queue = queue
         self._resolver = resolver
         self._clock = clock
@@ -76,7 +77,7 @@ class Pipeline:
                     continue
                 listing.owner_lookup_status = "PENDING"
                 await enqueue(s, OWNER_LOOKUP, f"owner:{gift.id}", priority=HIGH, listing_id=listing.id,
-                              gift_id=gift.id, payload={"notify": True})
+                              gift_id=gift.id, payload={"notify": True}, now=self._clock())
         changed = [e for e in events if e.type == PRICE_CHANGED]
         if changed:
             await self._price_changes(s, changed)
@@ -117,13 +118,20 @@ class Pipeline:
     async def _notify_new_listing(self, s: AsyncSession, listing: Listing, gift: Gift, owner: OwnerData,
                                   owner_known: bool) -> None:
         """F.2. Without owner data, users with owner criteria wait (no false match); the rest get the card now."""
+        matched = False
         for f in await active_filters(s, "notify_new_listing"):
             if not stage1(f, view(listing, gift)):
                 continue
             if has_owner_criteria(f) and not owner_known:
                 continue
             if stage2(f, owner):
-                await add_notification(s, f.user_id, listing.id, NEW_LISTING, f"{NEW_LISTING}:{listing.id}")
+                matched = True
+                if not self._owner_log:  # with OWNER_LOG_GROUP_ID everything goes through the group, no DMs
+                    await add_notification(s, f.user_id, listing.id, NEW_LISTING, f"{NEW_LISTING}:{listing.id}")
+        public = owner.status is OwnerStatus.FOUND and bool((owner.username or "").strip())
+        if matched and self._owner_log and public:  # sent by app/services/owner_log.py; never hidden owners
+            if not (await s.execute(select(OwnerLogPost.id).where(OwnerLogPost.listing_id == listing.id))).first():
+                s.add(OwnerLogPost(listing_id=listing.id))
 
     async def process_one(self) -> bool:
         task = await self.queue.claim()
@@ -169,7 +177,7 @@ class Pipeline:
                 if await cache.get_fresh(s, gift.id, now) is not None:
                     continue  # already known, nothing to pay for
                 await enqueue(s, OWNER_LOOKUP, f"owner:{gift.id}", priority=LOW, listing_id=listing.id,
-                              gift_id=gift.id, payload={"backfill": True})
+                              gift_id=gift.id, payload={"backfill": True}, now=self._clock())
                 if listing.owner_lookup_status == "NOT_NEEDED":
                     listing.owner_lookup_status = "PENDING"
                 queued += 1

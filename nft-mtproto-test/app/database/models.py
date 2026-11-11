@@ -153,6 +153,20 @@ class Notification(Base):
     __table_args__ = (UniqueConstraint("user_id", "event_key", name="uq_notifications_user_event"),)
 
 
+class OwnerLogPost(Base):
+    """An owner card in OWNER_LOG_GROUP_ID. PENDING -> SENT (message posted) -> CLAIMED (sent to claimer's DM)."""
+    __tablename__ = "owner_log_posts"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    listing_id: Mapped[int] = mapped_column(ForeignKey("listings.id", ondelete="CASCADE"), unique=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING", index=True)
+    message_id: Mapped[int | None] = mapped_column(BigInteger)
+    claimed_by: Mapped[int | None] = mapped_column(BigInteger)  # Telegram id of the claimer
+    claimed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, nullable=False)
+
+
 class ScanState(Base):
     """Scanner progress per gift type; survives restarts."""
     __tablename__ = "scan_state"

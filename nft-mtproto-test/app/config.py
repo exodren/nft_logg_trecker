@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -41,6 +42,7 @@ class Settings:
     listing_scan_interval: int = 300
     # Raw value; validated by the Telegram Log Sender (a bad value disables it, never the app).
     log_group_id: str | None = None
+    owner_log_group_id: int | None = None  # group for owner cards with the 'claim' button
 
     def secrets(self) -> list[str]:
         return [s for s in (self.bot_token, self.api_hash, self.kartoshka_api_token) if s]
@@ -76,6 +78,14 @@ def _admin_ids(raw: str) -> frozenset[int]:
         return frozenset(int(x) for x in raw.replace(" ", "").split(",") if x)
     except ValueError:
         raise ConfigError("ADMIN_TELEGRAM_IDS: числовые Telegram ID через запятую") from None
+
+
+def _group_id(raw: str | None) -> int | None:
+    if raw is None:
+        return None
+    if not re.fullmatch(r"-\d{1,20}", raw):
+        raise ConfigError("OWNER_LOG_GROUP_ID: id группы, отрицательное число вида -100...")
+    return int(raw)
 
 
 def _budget(raw: str) -> Decimal:
@@ -123,4 +133,5 @@ def load_settings(env: Mapping[str, str | None] | None = None) -> Settings:
         api_cache_ttl=_positive_int(env, "API_CACHE_TTL", 86_400),
         listing_scan_interval=_positive_int(env, "LISTING_SCAN_INTERVAL", 300),
         log_group_id=env.get("LOG_GROUP_ID"),
+        owner_log_group_id=_group_id(env.get("OWNER_LOG_GROUP_ID")),
     )

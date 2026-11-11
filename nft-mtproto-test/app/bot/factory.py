@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.bot import admin, handlers
 from app.bot.middlewares import ThrottleMiddleware, UserMiddleware
 from app.config import Settings
+from app.services import owner_log
 
 
 @dataclass
@@ -37,6 +38,7 @@ def create_dispatcher(deps: BotDeps) -> Dispatcher:
     for observer in (dp.message, dp.callback_query):
         observer.outer_middleware(ThrottleMiddleware())
         observer.middleware(UserMiddleware())
+    dp.include_router(owner_log.build_router())  # group 'Занять лог' button
     dp.include_router(admin.build_router())  # admin first: its filter lets non-admin updates fall through
     dp.include_router(handlers.build_router())
     return dp

@@ -21,6 +21,7 @@ from app.services.enrichment import OwnerResolver
 from app.services.log_sender import TelegramLogHandler, TelegramLogSender
 from app.services.notifications import NotificationSender
 from app.services.pipeline import Pipeline
+from app.services.owner_log import OwnerLogSender
 from app.services.queue import TaskQueue
 from app.supervisor import FatalComponentError, Supervisor
 from app.utils.log import setup_logging
@@ -59,7 +60,8 @@ async def run(settings: Settings) -> None:
     # Budget/402/401 warnings are logged at WARNING: stream 2 delivers them to LOG_GROUP_ID only.
     usage = ApiUsageManager(sessions, "kartoshka", settings.daily_api_budget_ton, price) \
         if provider is not None else None
-    pipeline = Pipeline(sessions, queue, OwnerResolver(sessions, provider, usage, settings.api_cache_ttl))
+    pipeline = Pipeline(sessions, queue, OwnerResolver(sessions, provider, usage, settings.api_cache_ttl),
+                        owner_log=settings.owner_log_group_id is not None)
 
     mtproto = MTProtoClient(settings) if not settings.missing_for("mtproto") else None
     scanner = ListingScanner(mtproto, sessions, settings.listing_scan_interval, on_events=pipeline.on_events) \
@@ -100,6 +102,8 @@ async def run(settings: Settings) -> None:
         supervisor.add("scanner", run_scanner)
     supervisor.add("workers", run_workers)
     supervisor.add("notifications", sender.run)
+    if settings.owner_log_group_id is not None:  # owner cards with the claim button, separate from LOG_GROUP_ID
+        supervisor.add("owner_log", OwnerLogSender(sessions, bot, settings.owner_log_group_id).run)
     supervisor.add("log_sender", log_sender.run)
     supervisor.add("bot", run_bot)
     supervisor.add("backup", lambda stop: run_backups(settings.database_url, ROOT_DIR / "backups", stop))
